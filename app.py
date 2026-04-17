@@ -3,6 +3,7 @@ import yfinance as yf
 import requests
 import json
 import os
+import uuid
 from openai import OpenAI
 
 # -----------------------------
@@ -118,6 +119,7 @@ with st.form("add"):
             st.error("Invalid ticker ❌")
         else:
             portfolio.append({
+                "id": str(uuid.uuid4()),
                 "name": name,
                 "ticker": ticker.upper(),
                 "qty": qty,
@@ -136,7 +138,7 @@ total_value = 0
 total_investment = 0
 summary = ""
 
-for i, asset in enumerate(portfolio):
+for asset in portfolio:
     try:
         price = get_stock_price(asset["ticker"])
 
@@ -157,17 +159,19 @@ for i, asset in enumerate(portfolio):
             st.write(f"**{asset['name']} ({asset['ticker']})** → {asset['currency']} {value:.2f} | ROI: {roi:.2f}%")
 
         with col2:
-            if st.button("❌", key=i):
-                portfolio.pop(i)
+            if st.button("❌", key=asset["id"]):
+                portfolio = [a for a in portfolio if a["id"] != asset["id"]]
                 save_portfolio(portfolio)
-                st.experimental_rerun()
+                st.rerun()
 
         summary += f"{asset['ticker']} ROI: {roi:.2f}% price: {price}\n"
 
-    except Exception as e:
+    except:
         st.warning(f"Error loading {asset['ticker']}")
 
-# Total ROI
+# -----------------------------
+# Total Portfolio
+# -----------------------------
 if total_investment > 0:
     total_roi = ((total_value - total_investment) / total_investment) * 100
 else:
