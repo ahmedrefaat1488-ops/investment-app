@@ -13,23 +13,40 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 st.set_page_config(page_title="AI Investment App", layout="wide")
 
-PORTFOLIO_FILE = "portfolio.json"
-WATCHLIST = ["AAPL", "MSFT", "NVDA", "GOOGL"]
+# -----------------------------
+# User Login (simple)
+# -----------------------------
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if st.session_state.user is None:
+    username = st.text_input("Enter your username")
+    if st.button("Login"):
+        st.session_state.user = username
+        st.rerun()
+    st.stop()
 
 # -----------------------------
-# Load / Save Portfolio
+# File per user
 # -----------------------------
-def load_portfolio():
-    if os.path.exists(PORTFOLIO_FILE):
-        with open(PORTFOLIO_FILE, "r") as f:
+PORTFOLIO_FILE = f"portfolio_{st.session_state.user}.json"
+WATCHLIST_FILE = f"watchlist_{st.session_state.user}.json"
+
+# -----------------------------
+# Load / Save
+# -----------------------------
+def load_data(file):
+    if os.path.exists(file):
+        with open(file, "r") as f:
             return json.load(f)
     return []
 
-def save_portfolio(data):
-    with open(PORTFOLIO_FILE, "w") as f:
+def save_data(file, data):
+    with open(file, "w") as f:
         json.dump(data, f)
 
-portfolio = load_portfolio()
+portfolio = load_data(PORTFOLIO_FILE)
+watchlist = load_data(WATCHLIST_FILE)
 
 # -----------------------------
 # Data Functions
@@ -49,7 +66,6 @@ def get_stock_fundamentals(ticker):
         return {
             "pe": info.get("trailingPE"),
             "market_cap": info.get("marketCap"),
-            "sector": info.get("sector")
         }
     except:
         return {}
@@ -69,7 +85,7 @@ def get_news(ticker):
         articles = requests.get(url).json().get("articles", [])[:3]
         return "\n".join([f"- {a['title']}" for a in articles])
     except:
-        return "No news available"
+        return "No news"
 
 # -----------------------------
 # AI Engine
@@ -85,7 +101,6 @@ def analyze_stock(data):
     - Decision (BUY / HOLD / SELL)
     - Confidence (1-10)
     - Reasoning
-    - Risks
     """
 
     response = client.chat.completions.create(
@@ -98,7 +113,7 @@ def analyze_stock(data):
 # -----------------------------
 # UI
 # -----------------------------
-st.title("📊 AI Investment Dashboard")
+st.title(f"📊 AI Investment App ({st.session_state.user})")
 
 # -----------------------------
 # Add Asset
@@ -107,15 +122,13 @@ st.header("➕ Add Asset")
 
 with st.form("add"):
     name = st.text_input("Name")
-    ticker = st.text_input("Ticker (e.g. AAPL)")
+    ticker = st.text_input("Ticker")
     qty = st.number_input("Quantity", min_value=0.0)
     buy_price = st.number_input("Buy Price", min_value=0.0)
     currency = st.selectbox("Currency", ["USD", "EUR", "GBP"])
 
     if st.form_submit_button("Add"):
-        price_test = get_stock_price(ticker)
-
-        if price_test is None:
+        if get_stock_price(ticker) is None:
             st.error("Invalid ticker ❌")
         else:
             portfolio.append({
@@ -126,8 +139,8 @@ with st.form("add"):
                 "buy_price": buy_price,
                 "currency": currency
             })
-            save_portfolio(portfolio)
-            st.success("Asset added!")
+            save_data(PORTFOLIO_FILE, portfolio)
+            st.success("Added!")
 
 # -----------------------------
 # Portfolio
@@ -136,110 +149,96 @@ st.header("💼 Portfolio")
 
 total_value = 0
 total_investment = 0
-summary = ""
 
 for asset in portfolio:
-    try:
-        price = get_stock_price(asset["ticker"])
+    price = get_stock_price(asset["ticker"])
+    if price is None:
+        continue
 
-        if price is None:
-            st.warning(f"Invalid ticker: {asset['ticker']}")
-            continue
+    value = price * asset["qty"]
+    investment = asset["buy_price"] * asset["qty"]
+    roi = ((value - investment) / investment) * 100
 
-        value = price * asset["qty"]
-        investment = asset["buy_price"] * asset["qty"]
-        roi = ((value - investment) / investment) * 100
+    total_value += value
+    total_investment += investment
 
-        total_value += value
-        total_investment += investment
+    col1, col2 = st.columns([4,1])
 
-        col1, col2 = st.columns([4,1])
+    with col1:
+        st.write(f"{asset['name']} → {value:.2f} | ROI: {roi:.2f}%")
 
-        with col1:
-            st.write(f"**{asset['name']} ({asset['ticker']})** → {asset['currency']} {value:.2f} | ROI: {roi:.2f}%")
+    with col2:
+        if st.button("❌", key=asset["id"]):
+            portfolio = [a for a in portfolio if a["id"] != asset["id"]]
+            save_data(PORTFOLIO_FILE, portfolio)
+            st.rerun()
 
-        with col2:
-            if st.button("❌", key=asset["id"]):
-                portfolio = [a for a in portfolio if a["id"] != asset["id"]]
-                save_portfolio(portfolio)
-                st.rerun()
-
-        summary += f"{asset['ticker']} ROI: {roi:.2f}% price: {price}\n"
-
-    except:
-        st.warning(f"Error loading {asset['ticker']}")
-
-# -----------------------------
-# Total Portfolio
-# -----------------------------
 if total_investment > 0:
     total_roi = ((total_value - total_investment) / total_investment) * 100
 else:
     total_roi = 0
 
-st.subheader(f"💰 Total Value: {total_value:.2f} | ROI: {total_roi:.2f}%")
+st.subheader(f"Total: {total_value:.2f} | ROI: {total_roi:.2f}%")
 
 # -----------------------------
-# AI Portfolio Advisor
+# WATCHLIST SECTION (NEW 🔥)
 # -----------------------------
-st.header("🤖 Portfolio Advisor")
+st.header("⭐ Watchlist")
 
-if st.button("Analyze Portfolio"):
-    if summary.strip() == "":
-        st.warning("Add assets first")
+# Add to watchlist
+new_watch = st.text_input("Add ticker to watchlist")
+
+if st.button("Add to Watchlist"):
+    if get_stock_price(new_watch) is None:
+        st.error("Invalid ticker ❌")
     else:
-        result = analyze_stock(summary)
-        st.write(result)
+        if new_watch.upper() not in watchlist:
+            watchlist.append(new_watch.upper())
+            save_data(WATCHLIST_FILE, watchlist)
+            st.success("Added to watchlist")
+
+# Display watchlist
+for ticker in watchlist:
+    price = get_stock_price(ticker)
+
+    col1, col2, col3 = st.columns([3,1,1])
+
+    with col1:
+        st.write(f"{ticker} → {price:.2f}" if price else ticker)
+
+    with col2:
+        if st.button("Analyze", key=f"an_{ticker}"):
+            data = {
+                "ticker": ticker,
+                "price": price,
+                "trend": get_price_trend(ticker),
+                "news": get_news(ticker)
+            }
+            result = analyze_stock(data)
+            st.write(result)
+
+    with col3:
+        if st.button("❌", key=f"del_{ticker}"):
+            watchlist.remove(ticker)
+            save_data(WATCHLIST_FILE, watchlist)
+            st.rerun()
 
 # -----------------------------
 # Stock Scanner
 # -----------------------------
-st.header("🔎 Stock Scanner")
+st.header("🔎 Quick Stock Analysis")
 
-ticker_input = st.text_input("Enter ticker")
+ticker_input = st.text_input("Enter ticker for quick analysis")
 
 if st.button("Analyze Stock"):
-    if ticker_input:
-        price = get_stock_price(ticker_input)
-
-        if price is None:
-            st.error("Invalid ticker ❌")
-        else:
-            fundamentals = get_stock_fundamentals(ticker_input)
-            trend = get_price_trend(ticker_input)
-            news = get_news(ticker_input)
-
-            data = {
-                "ticker": ticker_input,
-                "pe": fundamentals.get("pe"),
-                "market_cap": fundamentals.get("market_cap"),
-                "trend": trend,
-                "news": news
-            }
-
-            result = analyze_stock(data)
-            st.write(result)
-
-# -----------------------------
-# Watchlist Scanner
-# -----------------------------
-st.header("📡 Watchlist Scanner")
-
-if st.button("Scan Watchlist"):
-    for t in WATCHLIST:
-        st.subheader(t)
-
-        fundamentals = get_stock_fundamentals(t)
-        trend = get_price_trend(t)
-        news = get_news(t)
-
+    if get_stock_price(ticker_input) is None:
+        st.error("Invalid ticker ❌")
+    else:
         data = {
-            "ticker": t,
-            "pe": fundamentals.get("pe"),
-            "market_cap": fundamentals.get("market_cap"),
-            "trend": trend,
-            "news": news
+            "ticker": ticker_input,
+            "price": get_stock_price(ticker_input),
+            "trend": get_price_trend(ticker_input),
+            "news": get_news(ticker_input)
         }
-
         result = analyze_stock(data)
         st.write(result)
