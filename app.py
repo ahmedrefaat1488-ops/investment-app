@@ -382,3 +382,110 @@ if st.button("Find Best Stocks to Buy"):
     )
 
     st.write(response.choices[0].message.content)
+# -----------------------------
+# 🌍 Advanced Stock Scanner (S&P 500)
+# -----------------------------
+import pandas as pd
+
+st.header("🌍 Smart Stock Scanner")
+
+# Load S&P 500 list (cached for performance)
+@st.cache_data
+def load_sp500():
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    table = pd.read_html(url)[0]
+    return table["Symbol"].tolist()
+
+SP500 = load_sp500()
+
+# Strategy selection
+strategy = st.selectbox(
+    "Select Strategy",
+    ["Balanced", "Growth", "Value"]
+)
+
+# Limit scanning size (IMPORTANT for speed)
+scan_size = st.slider("Number of stocks to scan", 10, 100, 30)
+
+if st.button("Run Smart Scan"):
+
+    results = []
+
+    with st.spinner("Scanning market..."):
+        for ticker in SP500[:scan_size]:
+
+            price = get_stock_price(ticker)
+            fundamentals = get_stock_fundamentals(ticker)
+            trend = get_price_trend(ticker)
+
+            if price is None:
+                continue
+
+            pe = fundamentals.get("pe")
+            mc = fundamentals.get("market_cap")
+
+            score = 0
+
+            # -----------------------------
+            # STRATEGY LOGIC
+            # -----------------------------
+
+            if strategy == "Growth":
+                if trend > 3:
+                    score += 3
+                elif trend > 1:
+                    score += 2
+
+                if mc and mc > 10_000_000_000:
+                    score += 1
+
+            elif strategy == "Value":
+                if pe and pe < 20:
+                    score += 3
+                elif pe and pe < 30:
+                    score += 2
+
+                if trend > 0:
+                    score += 1
+
+            else:  # Balanced
+                if trend > 2:
+                    score += 2
+                elif trend > 0:
+                    score += 1
+
+                if pe and pe < 25:
+                    score += 2
+                elif pe and pe < 40:
+                    score += 1
+
+                if mc and mc > 10_000_000_000:
+                    score += 1
+
+            results.append({
+                "ticker": ticker,
+                "price": round(price, 2),
+                "trend": round(trend, 2),
+                "pe": pe,
+                "score": score
+            })
+
+    # Sort results
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
+
+    top_stocks = results[:5]
+
+    st.subheader("🏆 Top Picks")
+
+    for stock in top_stocks:
+        st.success(
+            f"{stock['ticker']} | Score: {stock['score']} | "
+            f"Trend: {stock['trend']}% | PE: {stock['pe']}"
+        )
+
+    # -----------------------------
+    # 📈 Show chart for top stock
+    # -----------------------------
+    if top_stocks:
+        best = top_stocks[0]["ticker"]
+        st.subheader(f"📈 Top Pick Chart: {best}")
