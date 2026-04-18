@@ -294,3 +294,91 @@ if st.button("Compare Stocks"):
         )
 
         st.write(response.choices[0].message.content)
+# -----------------------------
+# 🚀 Stock Recommendations (NEW)
+# -----------------------------
+st.header("🚀 Stock Recommendations")
+
+# Universe of stocks (you can expand this)
+STOCK_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
+    "META", "TSLA", "AMD", "NFLX", "INTC"
+]
+
+if st.button("Find Best Stocks to Buy"):
+
+    results = []
+
+    with st.spinner("Analyzing market..."):
+        for ticker in STOCK_UNIVERSE:
+
+            price = get_stock_price(ticker)
+            fundamentals = get_stock_fundamentals(ticker)
+            trend = get_price_trend(ticker)
+
+            if price is None:
+                continue
+
+            score = 0
+
+            # --- Scoring Logic ---
+            # Trend
+            if trend > 2:
+                score += 2
+            elif trend > 0:
+                score += 1
+
+            # PE Ratio
+            pe = fundamentals.get("pe")
+            if pe and pe < 25:
+                score += 2
+            elif pe and pe < 40:
+                score += 1
+
+            # Market Cap (stability)
+            mc = fundamentals.get("market_cap")
+            if mc and mc > 10_000_000_000:
+                score += 1
+
+            results.append({
+                "ticker": ticker,
+                "price": round(price, 2),
+                "trend": round(trend, 2),
+                "pe": pe,
+                "score": score
+            })
+
+    # Sort by best score
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
+
+    st.subheader("🏆 Top Recommendations")
+
+    top_stocks = results[:3]
+
+    for stock in top_stocks:
+        st.success(f"{stock['ticker']} → Score: {stock['score']} | Trend: {stock['trend']}% | PE: {stock['pe']}")
+
+    # -----------------------------
+    # 🤖 AI Final Recommendation
+    # -----------------------------
+    st.subheader("🤖 AI Insights")
+
+    prompt = f"""
+    You are an expert investor.
+
+    Based on this ranked data:
+
+    {top_stocks}
+
+    Explain:
+    - Which is best to buy
+    - Why
+    - Risks
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    st.write(response.choices[0].message.content)
