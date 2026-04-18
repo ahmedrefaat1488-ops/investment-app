@@ -3,3 +3,6 @@ yfinance
 requests
 openai
 supabase
+pandas
+lxml
+html5lib
