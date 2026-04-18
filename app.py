@@ -203,3 +203,83 @@ for item in watchlist:
         if st.button("❌", key=f"del_{item['id']}"):
             delete_watch(item["id"])
             st.rerun()
+# -----------------------------
+# 📊 Stock Comparison (NEW 🔥)
+# -----------------------------
+st.header("⚖️ Compare Stocks")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    stock1 = st.text_input("Stock 1")
+
+with col2:
+    stock2 = st.text_input("Stock 2")
+
+with col3:
+    stock3 = st.text_input("Stock 3 (optional)")
+
+if st.button("Compare Stocks"):
+
+    stocks = [s.upper() for s in [stock1, stock2, stock3] if s]
+
+    valid_stocks = []
+
+    for s in stocks:
+        if get_stock_price(s) is not None:
+            valid_stocks.append(s)
+        else:
+            st.warning(f"Invalid ticker: {s}")
+
+    if len(valid_stocks) < 2:
+        st.error("Enter at least 2 valid stocks")
+    else:
+        comparison_data = []
+
+        st.subheader("📊 Comparison Data")
+
+        for s in valid_stocks:
+            price = get_stock_price(s)
+            fundamentals = get_stock_fundamentals(s)
+            trend = get_price_trend(s)
+            news = get_news(s)
+
+            data = {
+                "ticker": s,
+                "price": round(price, 2) if price else None,
+                "pe": fundamentals.get("pe"),
+                "market_cap": fundamentals.get("market_cap"),
+                "trend": round(trend, 2),
+                "news": news
+            }
+
+            comparison_data.append(data)
+
+            st.write(f"### {s}")
+            st.write(data)
+
+        # -----------------------------
+        # AI Comparison
+        # -----------------------------
+        st.subheader("🤖 AI Recommendation")
+
+        prompt = f"""
+        You are a professional investor.
+
+        Compare these stocks:
+
+        {comparison_data}
+
+        Give:
+        - Best stock to buy
+        - Ranking (best to worst)
+        - Reasoning
+        - Risks
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        st.write(response.choices[0].message.content)
