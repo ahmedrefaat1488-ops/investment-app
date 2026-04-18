@@ -9,6 +9,17 @@ from supabase import create_client
 # -----------------------------
 # Setup
 # -----------------------------
+
+def get_stock_fundamentals(ticker):
+    try:
+        info = yf.Ticker(ticker).info
+        return {
+            "pe": info.get("trailingPE"),
+            "market_cap": info.get("marketCap"),
+        }
+    except:
+        return {}
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 supabase = create_client(
